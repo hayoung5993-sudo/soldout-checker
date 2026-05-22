@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="품절체커"/>
+<title>품절 체커</title>
+<link rel="manifest" href="manifest.json"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --pink:#c06878;--pink-light:#fff0f3;--pink-border:#f0a0b0;
+  --green:#2d8a4e;--green-light:#f0fff4;
+  --gray:#888;--bg:#fff5f7;
+  --safe-top:env(safe-area-inset-top);--safe-bot:env(safe-area-inset-bottom);
+}
+html,body{height:100%;background:var(--bg);font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;font-size:14px;color:#333}
+.header{background:var(--pink);color:#fff;padding:calc(var(--safe-top) + 14px) 16px 14px;position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(192,104,120,.3)}
+.header h1{font-size:18px;font-weight:800}
+.refresh-btn{background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.refresh-btn.spinning{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.stats-row{display:flex;gap:8px;padding:14px 14px 0;overflow-x:auto}
+.stat-chip{flex-shrink:0;background:#fff;border:1.5px solid #f0d5dc;border-radius:20px;padding:7px 14px;font-size:12px;font-weight:700;color:var(--gray);cursor:pointer;white-space:nowrap;transition:.15s}
+.stat-chip.active{background:var(--pink);color:#fff;border-color:var(--pink)}
+.list{padding:12px 14px calc(30px + var(--safe-bot))}
+.product-card{background:#fff;border-radius:14px;padding:14px;margin-bottom:10px;border:1.5px solid #f0d5dc;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.product-card.has-alert{border-color:var(--pink-border);background:var(--pink-light)}
+.product-card.urgent{border-color:#f59e0b}
+.card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px}
+.card-name{font-size:15px;font-weight:800;color:#222;flex:1;line-height:1.3}
+.urgent-star{font-size:14px;flex-shrink:0}
+.card-meta{font-size:11px;color:var(--gray);margin-bottom:10px}
+.card-opts{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
+.opt-chip{font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid #f0d5dc;background:#fff5f7;color:#555}
+.opt-chip.soldout{background:#ffe8ec;color:var(--pink);border-color:var(--pink-border);font-weight:700}
+.opt-chip.restock{background:var(--green-light);color:var(--green);border-color:#a8d5b5;font-weight:700}
+.taobao-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:11px;background:#ff6900;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:800;font-family:inherit;cursor:pointer;text-decoration:none}
+.taobao-btn:active{opacity:.85}
+.taobao-multi{display:flex;gap:7px}
+.taobao-multi .taobao-btn{flex:1;font-size:13px}
+.statusbar{position:fixed;top:calc(var(--safe-top) + 60px);left:0;right:0;z-index:60;background:#333;color:#fff;font-size:12px;padding:9px 16px;text-align:center;transform:translateY(-100%);transition:transform .25s}
+.statusbar.show{transform:translateY(0)}
+.empty{text-align:center;padding:60px 20px;color:#bbb}
+.empty-icon{font-size:52px;margin-bottom:14px}
+.empty-text{font-size:14px;line-height:1.8}
+.last-scan{text-align:center;font-size:11px;color:#bbb;padding:8px 0 0}
+</style>
+</head>
+<body>
+<div class="statusbar" id="statusBar"></div>
+<div class="header">
+  <h1>🔍 품절 체커</h1>
+  <button class="refresh-btn" id="refreshBtn">↻</button>
+</div>
+
+<div class="stats-row" id="statsRow">
+  <div class="stat-chip active" data-filter="all">전체 <span id="cnt-all">-</span></div>
+  <div class="stat-chip" data-filter="soldout">🔴 품절 <span id="cnt-soldout">-</span></div>
+  <div class="stat-chip" data-filter="urgent">⭐️ 우선 <span id="cnt-urgent">-</span></div>
+  <div class="stat-chip" data-filter="ok">🟢 정상 <span id="cnt-ok">-</span></div>
+</div>
+<div class="last-scan" id="lastScan"></div>
+<div class="list" id="productList"></div>
+
+<script>
+var CONFIG = {
+  notionToken: localStorage.getItem('notionToken') || '',
+  dbId: localStorage.getItem('notionDbId') || 'bcbc8ea2b20846d6a426fffccedfb715',
+};
+var state = { products: [], filter: 'all' };
+
+function showStatus(msg, ms) {
+  var bar = document.getElementById('statusBar');
+  bar.textContent = msg; bar.classList.add('show');
+  if (ms !== 0) setTimeout(function(){ bar.classList.remove('show'); }, ms||3500);
+}
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function timeAgo(iso){
+  if(!iso) return '체크 전';
+  var diff=Math.round((new Date()-new Date(iso))/60000);
+  if(diff<1) return '방금'; if(diff<60) return diff+'분 전';
+  var h=Math.round(diff/60); if(h<24) return h+'시간 전';
+  return Math.round(h/24)+'일 전';
+}
+
+// 타오바오 URL → 앱 스킴 변환
+function taobaoAppUrl(url) {
+  if (!url) return '';
+  // 상품 ID 추출
+  var m = url.match(/[?&]id=(\d+)/);
+  if (m) {
+    // 타오바오 앱 스킴: 앱 없으면 웹으로 폴백
+    return 'taobao://item.taobao.com/item.htm?id=' + m[1];
+  }
+  return url;
+}
+
+// 타오바오 열기 (앱 우선, 없으면 웹)
+function openTaobao(url) {
+  var appUrl = taobaoAppUrl(url);
+  var webUrl = url;
+  // 앱 스킴 시도
+  var iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+  document.body.appendChild(iframe);
+  iframe.src = appUrl;
+  // 300ms 후 앱이 안 열리면 웹으로
+  setTimeout(function() {
+    document.body.removeChild(iframe);
+    window.location.href = webUrl;
+  }, 1500);
+  return false;
+}
+
+async function notionFetch(endpoint, method, body) {
+  var token = CONFIG.notionToken;
+  if (!token) throw new Error('토큰 없음');
+  var opts = {
+    method: method||'GET',
+    headers: {
+      'Authorization': 'Bearer '+token,
+      'Notion-Version': '2022-06-28',
+      'Content-Type': 'application/json',
+    }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  var res = await fetch('https://notion-proxy.sue07043.workers.dev/v1'+endpoint, opts);
+  if (!res.ok) { var e=await res.json().catch(function(){return{};}); throw new Error(e.message||'API 오류 '+res.status); }
+  return res.json();
+}
+
+async function loadProducts() {
+  if (!CONFIG.notionToken) {
+    showStatus('⚙️ 토큰을 설정해주세요');
+    document.getElementById('productList').innerHTML =
+      '<div class="empty"><div class="empty-icon">🔑</div><div class="empty-text">Notion 토큰이 필요해요<br/><br/><button onclick="promptToken()" style="background:var(--pink);color:#fff;border:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:700;cursor:pointer">토큰 입력하기</button></div></div>';
+    return;
+  }
+  document.getElementById('refreshBtn').classList.add('spinning');
+  showStatus('불러오는 중...', 0);
+
+  var allPages=[], cursor;
+  try {
+    do {
+      var body={page_size:100};
+      if(cursor) body.start_cursor=cursor;
+      var data=await notionFetch('/databases/'+CONFIG.dbId+'/query','POST',body);
+      allPages=allPages.concat(data.results||[]);
+      cursor=data.has_more?data.next_cursor:undefined;
+    } while(cursor);
+
+    state.products=allPages.map(function(page){
+      var p=page.properties||{};
+      var name=(p['상품명']?.title||[]).map(function(t){return t.plain_text||'';}).join('')||'(이름없음)';
+      var taobaoRaw=(p['타오바오 URL']?.rich_text||[]).map(function(r){return r.plain_text;}).join('');
+      var taobaoUrls=taobaoRaw.split(/[\n,]/).map(function(s){return s.trim();}).filter(Boolean);
+      var prevSoldOut=(p['재고 현황 (수정 금지)']?.rich_text||[]).map(function(r){return r.plain_text;}).join('');
+      var lastChecked=p['마지막 확인 시간']?.date?.start||null;
+      var urgent=p['⭐️']?.checkbox||false;
+      var hasSoldout=prevSoldOut.includes('🔴');
+      var options=[];
+      if(prevSoldOut){
+        prevSoldOut.split(/[,\n]/).forEach(function(part){
+          part=part.trim(); if(!part) return;
+          var emoji=part.startsWith('🔴')?'🔴':part.startsWith('🟢')?'🟢':'';
+          var optName=part.replace(/^[🔴🟢]\s*/,'').trim();
+          if(optName) options.push({name:optName,emoji:emoji});
+        });
+      }
+      return {id:page.id,name:name,taobaoUrls:taobaoUrls,lastChecked:lastChecked,urgent:urgent,hasSoldout:hasSoldout,options:options};
+    }).filter(function(p){return p.name!=='(이름없음)'||p.taobaoUrls.length;});
+
+    state.products.sort(function(a,b){
+      return ((b.hasSoldout?2:0)+(b.urgent?1:0))-((a.hasSoldout?2:0)+(a.urgent?1:0));
+    });
+
+    localStorage.setItem('cachedProducts',JSON.stringify(state.products));
+    localStorage.setItem('lastFetch',new Date().toISOString());
+    updateCounts(); renderProducts();
+    showStatus('✅ '+state.products.length+'개 상품');
+    updateLastScan();
+  } catch(e) {
+    showStatus('❌ '+e.message);
+    var cached=localStorage.getItem('cachedProducts');
+    if(cached){try{state.products=JSON.parse(cached);updateCounts();renderProducts();}catch(e2){}}
+  } finally {
+    document.getElementById('refreshBtn').classList.remove('spinning');
+  }
+}
+
+function updateCounts(){
+  document.getElementById('cnt-all').textContent=state.products.length;
+  document.getElementById('cnt-soldout').textContent=state.products.filter(function(p){return p.hasSoldout;}).length;
+  document.getElementById('cnt-urgent').textContent=state.products.filter(function(p){return p.urgent;}).length;
+  document.getElementById('cnt-ok').textContent=state.products.filter(function(p){return !p.hasSoldout;}).length;
+}
+
+function updateLastScan(){
+  var last=localStorage.getItem('lastFetch');
+  var el=document.getElementById('lastScan');
+  if(last&&el) el.textContent='마지막 업데이트: '+timeAgo(last);
+}
+
+function renderProducts(){
+  var list=document.getElementById('productList');
+  var filtered=state.products.filter(function(p){
+    if(state.filter==='soldout') return p.hasSoldout;
+    if(state.filter==='urgent')  return p.urgent;
+    if(state.filter==='ok')      return !p.hasSoldout;
+    return true;
+  });
+  if(!filtered.length){
+    list.innerHTML='<div class="empty"><div class="empty-icon">'+(state.filter==='soldout'?'✅':'📦')+'</div><div class="empty-text">'+(state.filter==='soldout'?'품절된 상품이 없어요!':'상품이 없어요')+'</div></div>';
+    return;
+  }
+  list.innerHTML=filtered.map(function(p){
+    var cardCls='product-card'+(p.hasSoldout?' has-alert':'')+(p.urgent?' urgent':'');
+    var optsHtml='';
+    if(p.options.length){
+      optsHtml='<div class="card-opts">'+p.options.slice(0,8).map(function(o){
+        var cls=o.emoji==='🔴'?'opt-chip soldout':o.emoji==='🟢'?'opt-chip restock':'opt-chip';
+        return '<span class="'+cls+'">'+o.emoji+' '+escHtml(o.name)+'</span>';
+      }).join('')+(p.options.length>8?'<span class="opt-chip">+'+(p.options.length-8)+'개</span>':'')+'</div>';
+    } else if(p.hasSoldout){
+      optsHtml='<div class="card-opts"><span class="opt-chip soldout">🔴 품절</span></div>';
+    }
+
+    // 타오바오 버튼 (앱으로 열기)
+    var btnHtml='';
+    if(p.taobaoUrls.length>1){
+      btnHtml='<div class="taobao-multi">'+p.taobaoUrls.map(function(url,i){
+        return '<button class="taobao-btn" onclick="openTaobao(\''+escHtml(url)+'\')">🛒 타오바오 '+(i+1)+'</button>';
+      }).join('')+'</div>';
+    } else if(p.taobaoUrls.length===1){
+      btnHtml='<button class="taobao-btn" onclick="openTaobao(\''+escHtml(p.taobaoUrls[0])+'\')">🛒 타오바오 앱으로 열기</button>';
+    }
+
+    return '<div class="'+cardCls+'">'
+      +'<div class="card-top"><div class="card-name">'+escHtml(p.name)+'</div>'+(p.urgent?'<span class="urgent-star">⭐️</span>':'')+'</div>'
+      +'<div class="card-meta">마지막 체크: '+timeAgo(p.lastChecked)+'</div>'
+      +optsHtml+btnHtml+'</div>';
+  }).join('');
+}
+
+function promptToken(){
+  var token=prompt('Notion API 토큰을 입력해주세요 (ntn_... 또는 secret_...)');
+  if(token&&token.trim()){
+    CONFIG.notionToken=token.trim();
+    localStorage.setItem('notionToken',token.trim());
+    loadProducts();
+  }
+}
+
+document.querySelectorAll('.stat-chip').forEach(function(chip){
+  chip.addEventListener('click',function(){
+    document.querySelectorAll('.stat-chip').forEach(function(c){c.classList.remove('active');});
+    chip.classList.add('active');
+    state.filter=chip.dataset.filter;
+    renderProducts();
+  });
+});
+
+document.getElementById('refreshBtn').addEventListener('click',loadProducts);
+
+// 초기화
+(function init(){
+  var cached=localStorage.getItem('cachedProducts');
+  if(cached){try{state.products=JSON.parse(cached);updateCounts();renderProducts();updateLastScan();}catch(e){}}
+  if(CONFIG.notionToken) loadProducts();
+  else {
+    document.getElementById('productList').innerHTML=
+      '<div class="empty"><div class="empty-icon">🔑</div><div class="empty-text">Notion 토큰이 필요해요<br/><br/><button onclick="promptToken()" style="background:var(--pink);color:#fff;border:none;border-radius:10px;padding:10px 20px;font-size:14px;font-weight:700;cursor:pointer">토큰 입력하기</button></div></div>';
+  }
+})();
+</script>
+</body>
+</html>
