@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="품절체커"/>
+<title>품절 체커</title>
+<link rel="manifest" href="manifest.json"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --pink:#c06878;--pink-light:#fff0f3;--pink-border:#f0a0b0;
+  --green:#2d8a4e;--green-light:#f0fff4;
+  --gray:#888;--bg:#fff5f7;--white:#fff;
+  --safe-top:env(safe-area-inset-top);--safe-bot:env(safe-area-inset-bottom);
+}
+html,body{height:100%;background:var(--bg);font-family:-apple-system,'Apple SD Gothic Neo','Nanum Gothic',sans-serif;font-size:14px;color:#333}
+.header{background:var(--pink);color:#fff;padding:calc(var(--safe-top) + 12px) 16px 12px;position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(192,104,120,.3)}
+.header h1{font-size:17px;font-weight:800}
+.header-right{display:flex;gap:8px;align-items:center}
+.icon-btn{background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.icon-btn:active{background:rgba(255,255,255,.35)}
+.tabbar{background:#fff;border-top:1px solid #f0d5dc;padding:0 0 calc(var(--safe-bot));position:fixed;bottom:0;left:0;right:0;z-index:50;display:flex}
+.tab-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 0 6px;cursor:pointer;color:#bbb;font-size:10px;gap:2px;border:none;background:none;font-family:inherit}
+.tab-item .tab-icon{font-size:20px;line-height:1}
+.tab-item.active{color:var(--pink)}
+.page{display:none;padding:12px 14px calc(70px + var(--safe-bot));min-height:100vh}
+.page.active{display:block}
+.stats-row{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;padding-bottom:2px}
+.stat-chip{flex-shrink:0;background:#fff;border:1px solid #f0d5dc;border-radius:20px;padding:6px 13px;font-size:12px;font-weight:700;color:var(--gray);cursor:pointer;white-space:nowrap}
+.stat-chip.active{background:var(--pink);color:#fff;border-color:var(--pink)}
+.stat-chip .cnt{font-size:15px;display:block;text-align:center}
+.product-card{background:#fff;border-radius:14px;padding:13px 14px;margin-bottom:10px;border:1.5px solid #f0d5dc;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.product-card.has-alert{border-color:var(--pink-border);background:var(--pink-light)}
+.product-card.urgent{border-color:#f59e0b}
+.card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
+.card-name{font-size:14px;font-weight:800;color:#222;flex:1;line-height:1.3}
+.card-name a{color:#222;text-decoration:none}
+.urgent-badge{font-size:11px;background:#fef3c7;color:#d97706;border-radius:10px;padding:2px 7px;font-weight:700;flex-shrink:0}
+.card-meta{font-size:11px;color:var(--gray);margin-bottom:8px}
+.card-opts{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px}
+.opt-chip{font-size:12px;padding:3px 9px;border-radius:20px;border:1px solid #f0d5dc;background:#fff5f7;color:#555;display:flex;align-items:center;gap:4px}
+.opt-chip.soldout{background:#ffe8ec;color:var(--pink);border-color:var(--pink-border);font-weight:700}
+.opt-chip.restock{background:var(--green-light);color:var(--green);border-color:#a8d5b5;font-weight:700}
+.card-btns{display:flex;gap:7px}
+.card-btn{flex:1;padding:8px 4px;border-radius:9px;border:none;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;text-decoration:none;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.btn-taobao{background:#ff6900;color:#fff}
+.btn-ss{background:#03c75a;color:#fff}
+.btn-gray{background:#f5f5f5;color:#666}
+.alert-card{background:#fff;border-radius:12px;padding:12px 14px;margin-bottom:8px;border:1.5px solid #f0d5dc}
+.alert-card.soldout{border-color:var(--pink-border)}
+.alert-card.restock{border-color:#a8d5b5}
+.alert-row{display:flex;gap:10px;align-items:flex-start}
+.alert-emoji{font-size:20px;flex-shrink:0}
+.alert-content{flex:1}
+.alert-prod{font-size:13px;font-weight:700}
+.alert-opt{font-size:12px;color:var(--gray);margin-top:2px}
+.alert-time{font-size:11px;color:#bbb;margin-top:4px}
+.setting-card{background:#fff;border-radius:12px;padding:14px;margin-bottom:10px;border:1px solid #f0d5dc}
+.setting-card h3{font-size:13px;font-weight:800;color:var(--pink);margin-bottom:10px}
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #fce8ec}
+.setting-row:last-child{border:none}
+input[type=text],input[type=password]{width:100%;padding:9px 11px;border:1.5px solid #f0d5dc;border-radius:9px;font-size:13px;font-family:inherit;margin-top:6px}
+input:focus{outline:none;border-color:var(--pink)}
+.save-btn{width:100%;padding:13px;background:var(--pink);color:#fff;border:none;border-radius:11px;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer;margin-top:12px}
+.save-btn:active{background:#a8566a}
+.scan-fab{position:fixed;bottom:calc(70px + var(--safe-bot) + 12px);right:16px;width:52px;height:52px;border-radius:50%;background:var(--pink);color:#fff;font-size:22px;border:none;box-shadow:0 4px 14px rgba(192,104,120,.5);cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:40}
+.scan-fab:active{transform:scale(.94)}
+.scan-fab.spinning{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.statusbar{position:fixed;top:calc(var(--safe-top) + 56px);left:0;right:0;z-index:60;background:#333;color:#fff;font-size:12px;padding:8px 16px;text-align:center;transform:translateY(-100%);transition:transform .25s}
+.statusbar.show{transform:translateY(0)}
+.empty{text-align:center;padding:50px 20px;color:#bbb}
+.empty-icon{font-size:48px;margin-bottom:12px}
+.empty-text{font-size:14px;line-height:1.7}
+.section-title{font-size:12px;font-weight:700;color:var(--gray);margin:14px 0 8px;padding-left:2px}
+.err-box{background:#fff0f3;border:1px solid var(--pink-border);border-radius:10px;padding:14px;margin-bottom:12px;font-size:13px;color:var(--pink);line-height:1.7}
+</style>
+</head>
+<body>
+<div class="statusbar" id="statusBar"></div>
+<div class="header">
+  <h1>🔍 품절 체커</h1>
+  <div class="header-right">
+    <span id="lastScanLabel" style="font-size:11px;opacity:.75"></span>
+    <button class="icon-btn" id="refreshBtn">↻</button>
+  </div>
+</div>
+
+<div class="page active" id="page-products">
+  <div class="stats-row" id="statsRow">
+    <div class="stat-chip active" data-filter="all">전체 <span class="cnt" id="cnt-all">-</span></div>
+    <div class="stat-chip" data-filter="soldout">🔴 품절 <span class="cnt" id="cnt-soldout">-</span></div>
+    <div class="stat-chip" data-filter="urgent">⭐️ 우선 <span class="cnt" id="cnt-urgent">-</span></div>
+    <div class="stat-chip" data-filter="ok">🟢 정상 <span class="cnt" id="cnt-ok">-</span></div>
+  </div>
+  <div id="productList"></div>
+</div>
+
+<div class="page" id="page-alerts">
+  <div class="section-title">오늘의 변동 사항</div>
+  <div id="alertList"></div>
+</div>
+
+<div class="page" id="page-settings">
+  <div class="setting-card">
+    <h3>🔑 Notion 연동</h3>
+    <div style="font-size:12px;color:var(--gray);margin-bottom:8px;line-height:1.6">
+      크롬 확장 설정에서 확인한 API 키를 입력해주세요
+    </div>
+    <div><label style="font-size:12px;color:var(--gray)">API 토큰 (ntn_ 또는 secret_)</label>
+    <input type="password" id="notionToken" placeholder="ntn_..."/></div>
+    <div style="margin-top:8px"><label style="font-size:12px;color:var(--gray)">재고 추적 DB ID</label>
+    <input type="text" id="notionDbId" placeholder="bcbc8ea2..."/></div>
+    <button class="save-btn" id="saveSettingsBtn">저장 후 불러오기</button>
+  </div>
+  <div class="setting-card">
+    <h3>ℹ️ 사용 안내</h3>
+    <div style="font-size:12px;color:var(--gray);line-height:1.8">
+      • 품절 체크는 맥북 크롬 확장에서 실행<br/>
+      • 이 앱은 결과를 Notion에서 읽어서 표시<br/>
+      • 상품명 탭 → 타오바오 바로 열기<br/>
+      • 홈 화면에 추가하면 앱처럼 사용 가능
+    </div>
+  </div>
+</div>
+
+<div class="tabbar">
+  <button class="tab-item active" data-page="products"><span class="tab-icon">📦</span>상품</button>
+  <button class="tab-item" data-page="alerts"><span class="tab-icon">🔔</span>알림</button>
+  <button class="tab-item" data-page="settings"><span class="tab-icon">⚙️</span>설정</button>
+</div>
+<button class="scan-fab" id="scanFab">↻</button>
+
+<script>
+var CONFIG = {
+  notionToken: localStorage.getItem('notionToken') || '',
+  dbId: localStorage.getItem('notionDbId') || 'bcbc8ea2b20846d6a426fffccedfb715',
+};
+var state = { products: [], alerts: JSON.parse(localStorage.getItem('todayAlerts')||'[]'), filter: 'all' };
+
+// Cloudflare Workers CORS 프록시 사용
+var PROXY = 'https://notion-proxy.pinkglitter11.workers.dev';
+
+function showStatus(msg, ms) {
+  var bar = document.getElementById('statusBar');
+  bar.textContent = msg; bar.classList.add('show');
+  if (ms !== 0) setTimeout(function(){ bar.classList.remove('show'); }, ms||3500);
+}
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function timeAgo(iso){
+  if(!iso) return '체크 전';
+  var diff=Math.round((new Date()-new Date(iso))/60000);
+  if(diff<1) return '방금'; if(diff<60) return diff+'분 전';
+  var h=Math.round(diff/60); if(h<24) return h+'시간 전';
+  return Math.round(h/24)+'일 전';
+}
+
+// Notion API - 직접 호출 (CORS 허용 여부 테스트)
+async function notionFetch(endpoint, method, body) {
+  var token = CONFIG.notionToken;
+  if (!token) throw new Error('Notion 토큰이 없어요. 설정에서 입력해주세요.');
+
+  // 1차: 직접 호출 시도
+  var opts = {
+    method: method||'GET',
+    headers: {
+      'Authorization': 'Bearer '+token,
+      'Notion-Version': '2022-06-28',
+      'Content-Type': 'application/json',
+    }
+  };
+  if (body) opts.body = JSON.stringify(body);
+
+  try {
+    var res = await fetch('https://notion-proxy.sue07043.workers.dev/v1'+endpoint, opts);
+    if (res.ok) return res.json();
+    var err = await res.json().catch(function(){return{};});
+    throw new Error(err.message||'API 오류 '+res.status);
+  } catch(e) {
+    // CORS 에러면 프록시 시도
+    if (e.message && e.message.includes('Failed to fetch')) {
+      throw new Error('CORS 오류 — 아래 안내를 확인해주세요');
+    }
+    throw e;
+  }
+}
+
+async function loadProducts() {
+  if (!CONFIG.notionToken) {
+    showStatus('⚙️ 설정 탭에서 토큰을 입력해주세요');
+    document.getElementById('productList').innerHTML =
+      '<div class="err-box">⚙️ 설정 탭에서 Notion API 토큰을 입력하고 저장해주세요!</div>';
+    return;
+  }
+
+  document.getElementById('scanFab').classList.add('spinning');
+  showStatus('불러오는 중...', 0);
+
+  var allPages = [], cursor;
+  try {
+    do {
+      var body = { page_size: 100 };
+      if (cursor) body.start_cursor = cursor;
+      var data = await notionFetch('/databases/'+CONFIG.dbId+'/query', 'POST', body);
+      allPages = allPages.concat(data.results||[]);
+      cursor = data.has_more ? data.next_cursor : undefined;
+    } while(cursor);
+
+    state.products = allPages.map(function(page){
+      var p = page.properties||{};
+      var name = (p['상품명']?.title||[]).map(function(t){return t.plain_text||'';}).join('')||'(이름없음)';
+      var taobaoRaw = (p['타오바오 URL']?.rich_text||[]).map(function(r){return r.plain_text;}).join('');
+      var taobaoUrls = taobaoRaw.split(/[\n,]/).map(function(s){return s.trim();}).filter(Boolean);
+      var ssUrl = p['스스 수정 (pc)']?.url || p['스스 수정(pc)']?.url || p['스마트스토어 URL']?.url || '';
+      var prevSoldOut = (p['재고 현황 (수정 금지)']?.rich_text||[]).map(function(r){return r.plain_text;}).join('');
+      var lastChecked = p['마지막 확인 시간']?.date?.start || null;
+      var urgent = p['⭐️']?.checkbox || false;
+      var ssUnhandled = p['📌 스스 미처리']?.checkbox || false;
+      var hasSoldout = prevSoldOut.includes('🔴');
+      var options = [];
+      if (prevSoldOut) {
+        prevSoldOut.split(/[,\n]/).forEach(function(part){
+          part = part.trim(); if(!part) return;
+          var emoji = part.startsWith('🔴')?'🔴':part.startsWith('🟢')?'🟢':'';
+          var optName = part.replace(/^[🔴🟢]\s*/,'').trim();
+          if(optName) options.push({name:optName, emoji:emoji});
+        });
+      }
+      return { id:page.id, name:name, taobaoUrl:taobaoUrls[0]||'', taobaoUrls:taobaoUrls,
+               smartstoreUrl:ssUrl, lastChecked:lastChecked, urgent:urgent,
+               ssUnhandled:ssUnhandled, hasSoldout:hasSoldout, options:options };
+    }).filter(function(p){ return p.name!=='(이름없음)'||p.taobaoUrl; });
+
+    state.products.sort(function(a,b){
+      return ((b.hasSoldout?2:0)+(b.urgent?1:0)) - ((a.hasSoldout?2:0)+(a.urgent?1:0));
+    });
+
+    localStorage.setItem('cachedProducts', JSON.stringify(state.products));
+    localStorage.setItem('lastFetch', new Date().toISOString());
+    updateCounts(); renderProducts();
+    showStatus('✅ '+state.products.length+'개 상품');
+    updateLastScanLabel();
+
+  } catch(e) {
+    showStatus('❌ '+e.message);
+    // 캐시라도 보여주기
+    var cached = localStorage.getItem('cachedProducts');
+    if (cached) {
+      try {
+        state.products = JSON.parse(cached);
+        updateCounts(); renderProducts();
+      } catch(e2){}
+    }
+    // CORS 오류면 안내 표시
+    if (e.message && e.message.includes('CORS')) {
+      document.getElementById('productList').insertAdjacentHTML('afterbegin',
+        '<div class="err-box">⚠️ CORS 오류 발생<br/>'+
+        '아이폰 Safari에서 열면 이 문제가 생겨요.<br/>'+
+        '<b>해결법:</b> 아래 링크를 Safari로 열어서<br/>'+
+        '주소창 왼쪽 <b>AA → 콘텐츠 차단 해제</b> 또는<br/>'+
+        'Chrome 앱으로 접속해보세요!</div>');
+    }
+  } finally {
+    document.getElementById('scanFab').classList.remove('spinning');
+  }
+}
+
+function updateCounts(){
+  document.getElementById('cnt-all').textContent     = state.products.length;
+  document.getElementById('cnt-soldout').textContent = state.products.filter(function(p){return p.hasSoldout;}).length;
+  document.getElementById('cnt-urgent').textContent  = state.products.filter(function(p){return p.urgent;}).length;
+  document.getElementById('cnt-ok').textContent      = state.products.filter(function(p){return !p.hasSoldout;}).length;
+}
+
+function updateLastScanLabel(){
+  var last = localStorage.getItem('lastFetch');
+  var el = document.getElementById('lastScanLabel');
+  if(last&&el) el.textContent = timeAgo(last);
+}
+
+function renderProducts(){
+  var list = document.getElementById('productList');
+  var filtered = state.products.filter(function(p){
+    if(state.filter==='soldout') return p.hasSoldout;
+    if(state.filter==='urgent')  return p.urgent;
+    if(state.filter==='ok')      return !p.hasSoldout;
+    return true;
+  });
+  if(!filtered.length){
+    list.innerHTML='<div class="empty"><div class="empty-icon">'+(state.filter==='soldout'?'✅':'📦')+'</div><div class="empty-text">'+(state.filter==='soldout'?'품절된 상품이 없어요!':'상품이 없어요')+'</div></div>';
+    return;
+  }
+  list.innerHTML = filtered.map(function(p){
+    var cardCls='product-card'+(p.hasSoldout?' has-alert':'')+(p.urgent?' urgent':'');
+    var nameHtml = p.taobaoUrl
+      ? '<a href="'+escHtml(p.taobaoUrl)+'" target="_blank">'+escHtml(p.name)+'</a>'
+      : escHtml(p.name);
+    var optsHtml='';
+    if(p.options.length){
+      optsHtml='<div class="card-opts">'+p.options.slice(0,6).map(function(o){
+        var cls=o.emoji==='🔴'?'opt-chip soldout':o.emoji==='🟢'?'opt-chip restock':'opt-chip';
+        return '<span class="'+cls+'">'+o.emoji+' '+escHtml(o.name)+'</span>';
+      }).join('')+(p.options.length>6?'<span class="opt-chip">+'+(p.options.length-6)+'개</span>':'')+'</div>';
+    } else if(p.hasSoldout){
+      optsHtml='<div class="card-opts"><span class="opt-chip soldout">🔴 품절</span></div>';
+    }
+    var btns='';
+    if(p.taobaoUrls.length>1){
+      btns+=p.taobaoUrls.map(function(url,i){
+        return '<a class="card-btn btn-taobao" href="'+escHtml(url)+'" target="_blank">🛒 타오 '+(i+1)+'</a>';
+      }).join('');
+    } else if(p.taobaoUrl){
+      btns+='<a class="card-btn btn-taobao" href="'+escHtml(p.taobaoUrl)+'" target="_blank">🛒 타오바오</a>';
+    }
+    if(p.smartstoreUrl) btns+='<a class="card-btn btn-ss" href="'+escHtml(p.smartstoreUrl)+'" target="_blank">🏪 스스수정</a>';
+    return '<div class="'+cardCls+'"><div class="card-top"><div class="card-name">'+nameHtml+'</div>'+(p.urgent?'<span class="urgent-badge">⭐️ 우선</span>':'')+'</div>'
+      +'<div class="card-meta">마지막 체크: '+timeAgo(p.lastChecked)+'</div>'
+      +optsHtml+(btns?'<div class="card-btns">'+btns+'</div>':'')+'</div>';
+  }).join('');
+}
+
+function renderAlerts(){
+  var list=document.getElementById('alertList');
+  if(!state.alerts.length){
+    list.innerHTML='<div class="empty"><div class="empty-icon">🔔</div><div class="empty-text">아직 변동 사항이 없어요<br/>크롬 확장에서 체크하면 여기에 표시돼요</div></div>';
+    return;
+  }
+  list.innerHTML=state.alerts.map(function(a){
+    var isSoldout=a.type==='sold-out';
+    return '<div class="alert-card '+(isSoldout?'soldout':'restock')+'"><div class="alert-row">'
+      +'<span class="alert-emoji">'+(isSoldout?'🔴':'🟢')+'</span>'
+      +'<div class="alert-content"><div class="alert-prod">'+escHtml(a.productName)+' — '+(isSoldout?'품절 발생':'재입고')+'</div>'
+      +'<div class="alert-opt">'+escHtml(a.optionName||'')+'</div>'
+      +'<div class="alert-time">'+timeAgo(a.time)+'</div></div>'
+      +(a.smartstoreUrl?'<a class="card-btn btn-ss" href="'+escHtml(a.smartstoreUrl)+'" target="_blank" style="width:auto;padding:8px 10px;flex-shrink:0">스스수정</a>':'')
+      +'</div></div>';
+  }).join('');
+}
+
+document.querySelectorAll('.tab-item').forEach(function(tab){
+  tab.addEventListener('click', function(){
+    document.querySelectorAll('.tab-item').forEach(function(t){t.classList.remove('active');});
+    document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+    tab.classList.add('active');
+    var page=document.getElementById('page-'+tab.dataset.page);
+    if(page) page.classList.add('active');
+    if(tab.dataset.page==='alerts') renderAlerts();
+  });
+});
+
+document.querySelectorAll('.stat-chip').forEach(function(chip){
+  chip.addEventListener('click', function(){
+    document.querySelectorAll('.stat-chip').forEach(function(c){c.classList.remove('active');});
+    chip.classList.add('active');
+    state.filter=chip.dataset.filter;
+    renderProducts();
+  });
+});
+
+document.getElementById('refreshBtn').addEventListener('click', loadProducts);
+document.getElementById('scanFab').addEventListener('click', loadProducts);
+
+document.getElementById('saveSettingsBtn').addEventListener('click', function(){
+  var token=document.getElementById('notionToken').value.trim();
+  var dbId=document.getElementById('notionDbId').value.trim();
+  if(!token){showStatus('❌ 토큰을 입력해주세요'); return;}
+  CONFIG.notionToken=token;
+  CONFIG.dbId=dbId||CONFIG.dbId;
+  localStorage.setItem('notionToken',token);
+  localStorage.setItem('notionDbId',CONFIG.dbId);
+  showStatus('✅ 저장됐어요!');
+  setTimeout(loadProducts, 500);
+});
+
+// 초기화
+(function init(){
+  var savedToken=localStorage.getItem('notionToken');
+  var savedDb=localStorage.getItem('notionDbId');
+  if(savedToken){document.getElementById('notionToken').value=savedToken; CONFIG.notionToken=savedToken;}
+  if(savedDb){document.getElementById('notionDbId').value=savedDb; CONFIG.dbId=savedDb;}
+  else document.getElementById('notionDbId').value=CONFIG.dbId;
+
+  var cached=localStorage.getItem('cachedProducts');
+  if(cached){try{state.products=JSON.parse(cached);updateCounts();renderProducts();updateLastScanLabel();}catch(e){}}
+  if(CONFIG.notionToken) loadProducts();
+  else showStatus('⚙️ 설정 탭에서 Notion 토큰을 입력해주세요');
+})();
+</script>
+</body>
+</html>
